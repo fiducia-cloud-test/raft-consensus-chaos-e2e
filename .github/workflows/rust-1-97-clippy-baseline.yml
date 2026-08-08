@@ -1,0 +1,111 @@
+name: Rust 1.97 Clippy baseline canary
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rust-1-97-clippy-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rust-1-97-clippy-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-1-97-baseline-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LIVE_MUTEX_BASE: 68be40cbdfe8efc21adbaf0055eecc120ca4e865
+  LIVE_MUTEX_HEAD: 5114595a938f0d62f618d9aeb51593eae78cef06
+
+jobs:
+  exact-head:
+    name: strict baseline / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+
+    steps:
+      - name: Require immutable candidate pins
+        run: |
+          set -euo pipefail
+          [[ "$LIVE_MUTEX_BASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$LIVE_MUTEX_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$LIVE_MUTEX_BASE" != "$LIVE_MUTEX_HEAD"
+
+      - name: Check out exact live-mutex candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/live-mutex-rs
+          ref: ${{ env.LIVE_MUTEX_HEAD }}
+          path: live-mutex-rs
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Prove exact head and bounded four-file delta
+        run: |
+          set -euo pipefail
+          test "$(git -C live-mutex-rs rev-parse HEAD)" = "$LIVE_MUTEX_HEAD"
+          git -C live-mutex-rs cat-file -e "$LIVE_MUTEX_BASE^{commit}"
+          test "$(git -C live-mutex-rs merge-base "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD")" = "$LIVE_MUTEX_BASE"
+          actual="$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" | sort | paste -sd ' ' -)"
+          expected='src/config.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs'
+          test "$actual" = "$expected"
+          test -z "$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" -- .github/workflows)"
+
+      - name: Install pinned Rust toolchain action
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+
+      - name: Verify formatting and strict all-target lint
+        working-directory: live-mutex-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run platform-safe focused tests
+        working-directory: live-mutex-rs
+        run: |
+          set -euo pipefail
+          cargo test --locked config::tests -- --nocapture
+          cargo test --locked sockopt::tests -- --nocapture
+
+      - name: Run Unix integration boundaries
+        if: runner.os != 'Windows'
+        working-directory: live-mutex-rs
+        run: |
+          set -euo pipefail
+          cargo test --locked --test extra_locking_semaphore_multikey -- --nocapture
+          cargo test --locked --test k8s_raft_live_smoke --no-run
+
+      - name: Prove read-only immutable workflow policy
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/rust-1-97-clippy-baseline.yml').read_text()
+          secret_reference = 'secrets' + '.'
+          privileged_event = 'pull_request' + '_target:'
+          assert 'permissions:\n  contents: read' in workflow
+          assert 'persist-credentials: false' in workflow
+          assert secret_reference not in workflow
+          assert privileged_event not in workflow
+          for match in re.finditer(r'^\s*uses:\s*([^\s]+)$', workflow, re.MULTILINE):
+              assert re.search(r'@[0-9a-f]{40}$', match.group(1)), match.group(1)
+          PY
