@@ -1,0 +1,28 @@
+name: DEN-3008 three-laptop Raft contract
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verifier-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out independent test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate generated test-fleet contract
+        run: node scripts/validate-plan.mjs
+
+      - name: Prove healthy convergence accepted and split brain rejected
+        run: node scripts/self-test-three-node-status.mjs
+
+      - name: Shell syntax check physical status capture
+        run: bash -n scripts/capture-three-node-status.sh
