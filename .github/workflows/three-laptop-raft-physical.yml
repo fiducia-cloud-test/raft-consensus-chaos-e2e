@@ -1,0 +1,38 @@
+name: DEN-3008 physical three-laptop Raft status
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-status:
+    # This must execute from a lab runner that can reach all three private mesh
+    # endpoints. Hosted runners and missing self-hosted runners cannot certify it.
+    runs-on: [self-hosted, fiducia-laptop-orchestrator]
+    timeout-minutes: 20
+    env:
+      FIDUCIA_AWS_API: ${{ vars.FIDUCIA_LAB_AWS_API }}
+      FIDUCIA_GCP_API: ${{ vars.FIDUCIA_LAB_GCP_API }}
+      FIDUCIA_AZURE_API: ${{ vars.FIDUCIA_LAB_AZURE_API }}
+      FIDUCIA_ORG_ID: ${{ vars.FIDUCIA_LAB_ORG_ID }}
+      FIDUCIA_INTERNAL_SECRET: ${{ secrets.FIDUCIA_LAB_INTERNAL_SECRET }}
+    steps:
+      - name: Check out independent test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Capture and verify live multi-Raft state
+        run: bash scripts/capture-three-node-status.sh den-3008-raft-status
+
+      - name: Upload credential-free evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-3008-raft-status-${{ github.run_id }}
+          path: den-3008-raft-status/
+          if-no-files-found: error
+          retention-days: 14
