@@ -23,7 +23,7 @@ defaults:
 
 env:
   LIVE_MUTEX_BASE: 68be40cbdfe8efc21adbaf0055eecc120ca4e865
-  LIVE_MUTEX_HEAD: a8869c642601239576777649d3cf264e985a5b4c
+  LIVE_MUTEX_HEAD: 6637bedecef343b13803ec82c24d42b92180a29f
 
 jobs:
   exact-head:
@@ -59,16 +59,16 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Prove exact head and bounded five-file delta
+      - name: Prove exact head and bounded seven-file delta
         run: |
           set -euo pipefail
           test "$(git -C live-mutex-rs rev-parse HEAD)" = "$LIVE_MUTEX_HEAD"
           git -C live-mutex-rs cat-file -e "$LIVE_MUTEX_BASE^{commit}"
           test "$(git -C live-mutex-rs merge-base "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD")" = "$LIVE_MUTEX_BASE"
           actual="$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" | sort | paste -sd ' ' -)"
-          expected='src/config.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs vendor/flags2env/parser.c'
+          expected='src/client.rs src/config.rs src/server.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs vendor/flags2env/parser.c'
           test "$actual" = "$expected"
-          test -z "$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" -- .github/workflows)"
+          test -z "$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" -- .github)"
           python3 - <<'PY'
           from pathlib import Path
 
@@ -77,12 +77,26 @@ jobs:
           forbidden = '#elif defined(_WIN32)\n#include <shellapi.h>\n#include <windows.h>\n#endif'
           assert parser.count(expected) == 1
           assert forbidden not in parser
+
+          client = Path('live-mutex-rs/src/client.rs').read_text()
+          assert '#[cfg(unix)]\nuse tokio::net::UnixStream;' in client
+          assert '#[cfg(not(unix))]\n    pub async fn connect_uds' in client
+          assert 'Unix-domain sockets are unavailable on this platform' in client
+
+          server = Path('live-mutex-rs/src/server.rs').read_text()
+          assert '#[cfg(unix)]\nuse tokio::net::{UnixListener, UnixStream};' in server
+          assert 'fd: crate::sockopt::SocketHandle' in server
+          assert 'Unix-domain socket listener' in server
+
+          sockopt = Path('live-mutex-rs/src/sockopt.rs').read_text()
+          assert 'use std::os::windows::io::{AsRawSocket, RawSocket};' in sockopt
+          assert 'pub type SocketHandle = RawSocket;' in sockopt
           PY
 
-      - name: Install pinned Rust toolchain action
+      - name: Install pinned Rust 1.97.1 toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           components: rustfmt,clippy
 
       - name: Verify formatting and strict all-target lint
@@ -117,8 +131,9 @@ jobs:
           workflow = Path('.github/workflows/rust-1-97-clippy-baseline.yml').read_text()
           secret_reference = 'secrets' + '.'
           privileged_event = 'pull_request' + '_target:'
+          persist_setting = 'persist' + '-credentials: false'
           assert 'permissions:\n  contents: read' in workflow
-          assert workflow.count('persist-credentials: false') == 2
+          assert workflow.count(persist_setting) == 2
           assert secret_reference not in workflow
           assert privileged_event not in workflow
           for match in re.finditer(r'^\s*uses:\s*([^\s]+)$', workflow, re.MULTILINE):
