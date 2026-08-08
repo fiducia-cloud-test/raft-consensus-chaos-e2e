@@ -23,7 +23,7 @@ defaults:
 
 env:
   LIVE_MUTEX_BASE: 68be40cbdfe8efc21adbaf0055eecc120ca4e865
-  LIVE_MUTEX_HEAD: 5114595a938f0d62f618d9aeb51593eae78cef06
+  LIVE_MUTEX_HEAD: a8869c642601239576777649d3cf264e985a5b4c
 
 jobs:
   exact-head:
@@ -36,6 +36,12 @@ jobs:
         os: [ubuntu-24.04, macos-15, windows-2025]
 
     steps:
+      - name: Check out independent canary
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
       - name: Require immutable candidate pins
         run: |
           set -euo pipefail
@@ -53,16 +59,25 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Prove exact head and bounded four-file delta
+      - name: Prove exact head and bounded five-file delta
         run: |
           set -euo pipefail
           test "$(git -C live-mutex-rs rev-parse HEAD)" = "$LIVE_MUTEX_HEAD"
           git -C live-mutex-rs cat-file -e "$LIVE_MUTEX_BASE^{commit}"
           test "$(git -C live-mutex-rs merge-base "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD")" = "$LIVE_MUTEX_BASE"
           actual="$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" | sort | paste -sd ' ' -)"
-          expected='src/config.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs'
+          expected='src/config.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs vendor/flags2env/parser.c'
           test "$actual" = "$expected"
           test -z "$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" -- .github/workflows)"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          parser = Path('live-mutex-rs/vendor/flags2env/parser.c').read_text()
+          expected = '#elif defined(_WIN32)\n#include <windows.h>\n#include <shellapi.h>\n#endif'
+          forbidden = '#elif defined(_WIN32)\n#include <shellapi.h>\n#include <windows.h>\n#endif'
+          assert parser.count(expected) == 1
+          assert forbidden not in parser
+          PY
 
       - name: Install pinned Rust toolchain action
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
@@ -103,7 +118,7 @@ jobs:
           secret_reference = 'secrets' + '.'
           privileged_event = 'pull_request' + '_target:'
           assert 'permissions:\n  contents: read' in workflow
-          assert 'persist-credentials: false' in workflow
+          assert workflow.count('persist-credentials: false') == 2
           assert secret_reference not in workflow
           assert privileged_event not in workflow
           for match in re.finditer(r'^\s*uses:\s*([^\s]+)$', workflow, re.MULTILINE):
