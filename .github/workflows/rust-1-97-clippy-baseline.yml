@@ -23,7 +23,7 @@ defaults:
 
 env:
   LIVE_MUTEX_BASE: 68be40cbdfe8efc21adbaf0055eecc120ca4e865
-  LIVE_MUTEX_HEAD: 6637bedecef343b13803ec82c24d42b92180a29f
+  LIVE_MUTEX_HEAD: 66d25536839a7e17acf9883397bd2c6d5ba9bd5f
 
 jobs:
   exact-head:
@@ -59,14 +59,14 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Prove exact head and bounded seven-file delta
+      - name: Prove exact head and bounded eight-file delta
         run: |
           set -euo pipefail
           test "$(git -C live-mutex-rs rev-parse HEAD)" = "$LIVE_MUTEX_HEAD"
           git -C live-mutex-rs cat-file -e "$LIVE_MUTEX_BASE^{commit}"
           test "$(git -C live-mutex-rs merge-base "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD")" = "$LIVE_MUTEX_BASE"
           actual="$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" | sort | paste -sd ' ' -)"
-          expected='src/client.rs src/config.rs src/server.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs vendor/flags2env/parser.c'
+          expected='src/broker_raft.rs src/client.rs src/config.rs src/server.rs src/sockopt.rs tests/extra_locking_semaphore_multikey.rs tests/k8s_raft_live_smoke.rs vendor/flags2env/parser.c'
           test "$actual" = "$expected"
           test -z "$(git -C live-mutex-rs diff --name-only "$LIVE_MUTEX_BASE" "$LIVE_MUTEX_HEAD" -- .github)"
           python3 - <<'PY'
@@ -91,6 +91,13 @@ jobs:
           sockopt = Path('live-mutex-rs/src/sockopt.rs').read_text()
           assert 'use std::os::windows::io::{AsRawSocket, RawSocket};' in sockopt
           assert 'pub type SocketHandle = RawSocket;' in sockopt
+
+          broker = Path('live-mutex-rs/src/broker_raft.rs').read_text()
+          assert '#[cfg(unix)]\nconst DATA_DIR_LOCK_FILE: &str = "broker-raft.lock";' in broker
+
+          config = Path('live-mutex-rs/src/config.rs').read_text()
+          assert 'source: Box<toml::de::Error>,' in config
+          assert 'source: Box::new(source),' in config
           PY
 
       - name: Install pinned Rust 1.97.1 toolchain
