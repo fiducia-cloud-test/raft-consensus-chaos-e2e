@@ -1,0 +1,9 @@
+{
+  "spec": "single-register/v1",
+  "expected": "reject",
+  "operations": [
+    {"id":"w1","kind":"write","value":1,"result":"ok","invoke":0,"response":1},
+    {"id":"r1","kind":"read","result":0,"invoke":2,"response":3}
+  ],
+  "reason": "the read starts after the write completed, so returning the old value violates real-time precedence"
+}
