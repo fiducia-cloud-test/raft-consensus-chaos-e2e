@@ -1,0 +1,39 @@
+name: deterministic state-machine evidence
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: state-machine-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Verify deterministic linearizability and state-machine classifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          for seed in 1 2 3 42 31337 3735928559; do
+            node scripts/state-machine-linearizability.mjs --seed="$seed" --receipt="evidence/state-machine-$seed.json" >/dev/null
+          done
+          test "$(find evidence -type f -name 'state-machine-*.json' | wc -l)" -eq 6
+      - name: Check known counterexample fixture remains impossible
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'const f=require("./fixtures/state-machine/known-nonlinearizable.json"); if(f.expected!=="reject"||f.operations.length!==2) process.exit(1)'
