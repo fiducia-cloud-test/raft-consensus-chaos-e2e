@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install 1.97.0 --profile minimal
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
           rustup override set 1.97.0
       - name: Format, lint and unit-test checker
         shell: bash
