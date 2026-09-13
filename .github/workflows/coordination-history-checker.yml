@@ -1,0 +1,62 @@
+name: coordination history checker
+
+on:
+  pull_request:
+    paths:
+      - 'tools/coordination-history-checker/**'
+      - 'fixtures/operations-control-plane/**'
+      - '.github/workflows/coordination-history-checker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coordination-history-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bounded-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Select Rust 1.97
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup override set 1.97.0
+      - name: Format, lint and unit-test checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path tools/coordination-history-checker/Cargo.toml -- --check
+          cargo clippy --manifest-path tools/coordination-history-checker/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path tools/coordination-history-checker/Cargo.toml
+      - name: Accept valid current-contract history
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --manifest-path tools/coordination-history-checker/Cargo.toml -- \
+            --history=fixtures/operations-control-plane/cas-history-accepted.json \
+            --expected=accept \
+            --receipt=evidence/operations-control-plane-accepted.json >/dev/null
+      - name: Reject impossible real-time history
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --manifest-path tools/coordination-history-checker/Cargo.toml -- \
+            --history=fixtures/operations-control-plane/cas-history-rejected.json \
+            --expected=reject \
+            --receipt=evidence/operations-control-plane-rejected.json >/dev/null
+      - name: Verify receipt scope stays bounded
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'bounded external-history checker' evidence/operations-control-plane-accepted.json >/dev/null
+          grep -F 'not unbounded proof' evidence/operations-control-plane-accepted.json >/dev/null
