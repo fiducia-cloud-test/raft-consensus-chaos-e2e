@@ -1,0 +1,37 @@
+{
+  "schema": "fiducia.coordination-history/v1",
+  "source": {
+    "repository": "fiducia-cloud/fiducia-operations-control-plane",
+    "revision": "7bf473a436825bff1641be6a4f9dcc02a6e00159",
+    "contract": "Coordination::compare_and_set/read"
+  },
+  "seed": 871001,
+  "initial": { "generation": 0, "value": null },
+  "operations": [
+    {
+      "id": "client-a-cas",
+      "invoke": 0,
+      "response": 3,
+      "kind": "cas",
+      "expected_generation": 0,
+      "value": "deploy-v1",
+      "result": { "status": "applied", "generation": 1 }
+    },
+    {
+      "id": "client-b-cas",
+      "invoke": 1,
+      "response": 4,
+      "kind": "cas",
+      "expected_generation": 0,
+      "value": "deploy-v2",
+      "result": { "status": "generation_mismatch", "generation": 1 }
+    },
+    {
+      "id": "client-c-read",
+      "invoke": 5,
+      "response": 6,
+      "kind": "read",
+      "result": { "status": "read", "generation": 1, "value": "deploy-v1" }
+    }
+  ]
+}
