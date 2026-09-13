@@ -31,11 +31,10 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
           rustup override set 1.97.0
-      - name: Format, lint and unit-test checker
+      - name: Lint and unit-test checker
         shell: bash
         run: |
           set -euo pipefail
-          cargo fmt --manifest-path tools/coordination-history-checker/Cargo.toml -- --check
           cargo clippy --manifest-path tools/coordination-history-checker/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path tools/coordination-history-checker/Cargo.toml
       - name: Accept valid current-contract history
@@ -60,3 +59,6 @@ jobs:
           set -euo pipefail
           grep -F 'bounded external-history checker' evidence/operations-control-plane-accepted.json >/dev/null
           grep -F 'not unbounded proof' evidence/operations-control-plane-accepted.json >/dev/null
+      - name: Enforce rustfmt
+        shell: bash
+        run: cargo fmt --manifest-path tools/coordination-history-checker/Cargo.toml -- --check
