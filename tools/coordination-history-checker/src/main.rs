@@ -216,8 +216,8 @@ fn parse_args() -> Result<(PathBuf, bool, Option<PathBuf>), String> {
 fn run() -> Result<(), String> {
     let (path, expected_accept, receipt_path) = parse_args()?;
     let input = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let history: History = serde_json::from_str(&input)
-        .map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let history: History =
+        serde_json::from_str(&input).map_err(|e| format!("parse {}: {e}", path.display()))?;
     let result = check(&history);
     let accepted = result.is_ok();
     if accepted != expected_accept {
