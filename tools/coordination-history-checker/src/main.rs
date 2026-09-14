@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +69,9 @@ fn apply(state: &RegisterState, op: &Operation) -> Option<RegisterState> {
                     value: op.value.clone(),
                 })
             } else {
-                if op.result.status != "generation_mismatch" || op.result.generation != state.generation {
+                if op.result.status != "generation_mismatch"
+                    || op.result.generation != state.generation
+                {
                     return None;
                 }
                 Some(state.clone())
@@ -149,7 +150,9 @@ fn check(history: &History) -> Result<Vec<String>, String> {
 
         for idx in candidates {
             let op = &history.operations[idx];
-            let Some(next) = apply(&state, op) else { continue };
+            let Some(next) = apply(&state, op) else {
+                continue;
+            };
             order.push(op.id.clone());
             if search(
                 history,
@@ -177,7 +180,10 @@ fn check(history: &History) -> Result<Vec<String>, String> {
     ) {
         Ok(order)
     } else {
-        Err("no sequential generation-register history satisfies responses and real-time precedence".into())
+        Err(
+            "no sequential generation-register history satisfies responses and real-time precedence"
+                .into(),
+        )
     }
 }
 
@@ -200,13 +206,19 @@ fn parse_args() -> Result<(PathBuf, bool, Option<PathBuf>), String> {
             return Err(format!("unknown argument: {arg}"));
         }
     }
-    Ok((history.ok_or("--history is required")?, expected_accept, receipt))
+    Ok((
+        history.ok_or("--history is required")?,
+        expected_accept,
+        receipt,
+    ))
 }
 
 fn run() -> Result<(), String> {
     let (path, expected_accept, receipt_path) = parse_args()?;
-    let input = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let history: History = serde_json::from_str(&input).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let input =
+        fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let history: History = serde_json::from_str(&input)
+        .map_err(|e| format!("parse {}: {e}", path.display()))?;
     let result = check(&history);
     let accepted = result.is_ok();
     if accepted != expected_accept {
@@ -260,7 +272,10 @@ mod tests {
                 contract: "Coordination::compare_and_set/read".into(),
             },
             seed: 42,
-            initial: RegisterState { generation: 0, value: None },
+            initial: RegisterState {
+                generation: 0,
+                value: None,
+            },
             operations,
         }
     }
@@ -268,8 +283,32 @@ mod tests {
     #[test]
     fn rejects_read_that_regresses_after_completed_write() {
         let ops = vec![
-            Operation { id: "write".into(), invoke: 0, response: 1, kind: "cas".into(), expected_generation: Some(0), value: Some("a".into()), result: ResultValue { status: "applied".into(), generation: 1, value: None } },
-            Operation { id: "read".into(), invoke: 2, response: 3, kind: "read".into(), expected_generation: None, value: None, result: ResultValue { status: "read".into(), generation: 0, value: None } },
+            Operation {
+                id: "write".into(),
+                invoke: 0,
+                response: 1,
+                kind: "cas".into(),
+                expected_generation: Some(0),
+                value: Some("a".into()),
+                result: ResultValue {
+                    status: "applied".into(),
+                    generation: 1,
+                    value: None,
+                },
+            },
+            Operation {
+                id: "read".into(),
+                invoke: 2,
+                response: 3,
+                kind: "read".into(),
+                expected_generation: None,
+                value: None,
+                result: ResultValue {
+                    status: "read".into(),
+                    generation: 0,
+                    value: None,
+                },
+            },
         ];
         assert!(check(&history(ops)).is_err());
     }
@@ -277,8 +316,32 @@ mod tests {
     #[test]
     fn accepts_overlapping_competing_cas() {
         let ops = vec![
-            Operation { id: "a".into(), invoke: 0, response: 3, kind: "cas".into(), expected_generation: Some(0), value: Some("a".into()), result: ResultValue { status: "applied".into(), generation: 1, value: None } },
-            Operation { id: "b".into(), invoke: 1, response: 4, kind: "cas".into(), expected_generation: Some(0), value: Some("b".into()), result: ResultValue { status: "generation_mismatch".into(), generation: 1, value: None } },
+            Operation {
+                id: "a".into(),
+                invoke: 0,
+                response: 3,
+                kind: "cas".into(),
+                expected_generation: Some(0),
+                value: Some("a".into()),
+                result: ResultValue {
+                    status: "applied".into(),
+                    generation: 1,
+                    value: None,
+                },
+            },
+            Operation {
+                id: "b".into(),
+                invoke: 1,
+                response: 4,
+                kind: "cas".into(),
+                expected_generation: Some(0),
+                value: Some("b".into()),
+                result: ResultValue {
+                    status: "generation_mismatch".into(),
+                    generation: 1,
+                    value: None,
+                },
+            },
         ];
         assert_eq!(check(&history(ops)).unwrap(), vec!["a", "b"]);
     }
